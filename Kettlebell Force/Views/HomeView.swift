@@ -10,7 +10,7 @@ import MetaWear
 
 struct HomeView: View {
     @ObservedObject var dataStore = DataStore.shared
-    @StateObject private var metaMotionManager = MetaMotionManager()
+    @State private var metaMotionManager: MetaMotionManager?
     @State private var showingSessionView = false
     @State private var selectedSession: SessionSummary?
     
@@ -44,6 +44,8 @@ struct HomeView: View {
                 
                 // Start New Session Button
                 Button(action: {
+                    // Create MetaMotionManager only when starting a session
+                    metaMotionManager = MetaMotionManager()
                     showingSessionView = true
                 }) {
                     Text("Start New Session")
@@ -56,8 +58,13 @@ struct HomeView: View {
                 .padding(.bottom)
             }
             .navigationTitle("Kettlebell Force")
-            .sheet(isPresented: $showingSessionView) {
-                SessionView(metaMotionManager: metaMotionManager)
+            .sheet(isPresented: $showingSessionView, onDismiss: {
+                // Clean up MetaMotionManager when sheet dismisses
+                metaMotionManager = nil
+            }) {
+                if let manager = metaMotionManager {
+                    SessionView(metaMotionManager: manager)
+                }
             }
             .sheet(item: $selectedSession) { session in
                 SessionDetailView(session: session)

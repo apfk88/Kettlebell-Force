@@ -6,19 +6,22 @@
 //
 
 import SwiftUI
+import MetaWear
 
 struct SessionView: View {
     @ObservedObject var metaMotionManager: MetaMotionManager
     @ObservedObject var dataStore = DataStore.shared
     @Environment(\.dismiss) var dismiss
     
-    @State private var kettlebellMassText: String = "24"
-    @State private var bodyMassText: String = ""
+    @State private var kettlebellMassKg: Int = 24
+    @State private var bodyMassKg: Int = 0
     @State private var selectedExerciseType: ExerciseType = .swing
     @State private var sessionProcessor: SessionProcessor?
     @State private var isSessionActive = false
     @State private var sessionStartTime: Date?
     @State private var showingExitAlert = false
+    @State private var showingBodyMassPicker = false
+    @State private var showingKettlebellMassPicker = false
     
     init(metaMotionManager: MetaMotionManager) {
         self.metaMotionManager = metaMotionManager
@@ -73,7 +76,7 @@ struct SessionView: View {
                         HStack {
                             Image(systemName: metaMotionManager.isConnected ? "checkmark.circle.fill" : "circle")
                                 .foregroundColor(metaMotionManager.isConnected ? .green : .secondary)
-                            if let device = metaMotionManager.device, let deviceName = device.name, !deviceName.isEmpty {
+                            if let deviceName = metaMotionManager.deviceName, !deviceName.isEmpty {
                                 Text(deviceName)
                                     .foregroundColor(.primary)
                             } else {
@@ -92,56 +95,78 @@ struct SessionView: View {
                     .padding(.horizontal)
                 }
                 
-                // Body Mass and Kettlebell Mass Inputs - Side by Side
+                // Body Mass Input Row
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Weight (KG)")
                         .font(.headline)
                         .padding(.horizontal)
                     
-                    HStack(spacing: 16) {
-                        // Body Mass Input
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Bodyweight")
-                                .font(.subheadline)
+                    Button(action: {
+                        showingBodyMassPicker = true
+                    }) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Bodyweight")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                Text(bodyMassKg > 0 ? "\(bodyMassKg) KG" : "Not set")
+                                    .font(.title3)
+                                    .foregroundColor(.primary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
                                 .foregroundColor(.secondary)
-                            TextField("KG", text: $bodyMassText)
-                                .textFieldStyle(.roundedBorder)
-                                .keyboardType(.numberPad)
-                                .font(.title2)
-                                .multilineTextAlignment(.center)
-                                .padding(.vertical, 12)
-                                .frame(minHeight: 50)
-                                .contentShape(Rectangle())
-                                .onAppear {
-                                    let bodyMass = Int(dataStore.userProfile.bodyMassKg)
-                                    bodyMassText = bodyMass > 0 ? "\(bodyMass)" : ""
-                                }
-                                .onChange(of: bodyMassText) { oldValue, newValue in
-                                    if let value = Int(newValue), value > 0 {
-                                        dataStore.userProfile.bodyMassKg = Double(value)
-                                        dataStore.saveUserProfile()
-                                    }
-                                }
+                                .font(.caption)
                         }
-                        .frame(maxWidth: .infinity)
-                        
-                        // Kettlebell Mass Input
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Kettlebell")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            TextField("KG", text: $kettlebellMassText)
-                                .textFieldStyle(.roundedBorder)
-                                .keyboardType(.numberPad)
-                                .font(.title2)
-                                .multilineTextAlignment(.center)
-                                .padding(.vertical, 12)
-                                .frame(minHeight: 50)
-                                .contentShape(Rectangle())
-                        }
-                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(10)
                     }
+                    .buttonStyle(.plain)
                     .padding(.horizontal)
+                    
+                    // Kettlebell Mass Input Row
+                    Button(action: {
+                        showingKettlebellMassPicker = true
+                    }) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Kettlebell")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                Text("\(kettlebellMassKg) KG")
+                                    .font(.title3)
+                                    .foregroundColor(.primary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                        }
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(10)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal)
+                }
+                .sheet(isPresented: $showingBodyMassPicker) {
+                    WeightPickerSheet(
+                        title: "Bodyweight",
+                        selectedValue: $bodyMassKg,
+                        range: 30...200,
+                        unit: "KG",
+                        isPresented: $showingBodyMassPicker
+                    )
+                }
+                .sheet(isPresented: $showingKettlebellMassPicker) {
+                    WeightPickerSheet(
+                        title: "Kettlebell Weight",
+                        selectedValue: $kettlebellMassKg,
+                        range: 4...80,
+                        unit: "KG",
+                        isPresented: $showingKettlebellMassPicker
+                    )
                 }
                 
                 // Exercise Type Picker
@@ -177,6 +202,11 @@ struct SessionView: View {
             if !metaMotionManager.isConnected {
                 metaMotionManager.tryAutoConnect()
             }
+            // Initialize body mass from user profile
+            let savedBodyMass = Int(dataStore.userProfile.bodyMassKg)
+            if savedBodyMass > 0 {
+                bodyMassKg = savedBodyMass
+            }
         }
     }
     
@@ -208,12 +238,12 @@ struct SessionView: View {
         }
     }
     
-    private var kettlebellMassKg: Double {
-        Double(kettlebellMassText) ?? 0
+    private var kettlebellMassKgDouble: Double {
+        Double(kettlebellMassKg)
     }
     
-    private var bodyMassKg: Double {
-        Double(bodyMassText) ?? dataStore.userProfile.bodyMassKg
+    private var bodyMassKgDouble: Double {
+        Double(bodyMassKg)
     }
     
     private func startSession() {
@@ -221,16 +251,14 @@ struct SessionView: View {
         guard bodyMassKg > 0 else { return }
         guard metaMotionManager.isConnected else { return }
         
-        // Save body mass if entered
-        if let bodyMass = Int(bodyMassText), bodyMass > 0 {
-            dataStore.userProfile.bodyMassKg = Double(bodyMass)
-            dataStore.saveUserProfile()
-        }
+        // Save body mass to user profile
+        dataStore.userProfile.bodyMassKg = Double(bodyMassKg)
+        dataStore.saveUserProfile()
         
         let startEpochMs = UInt64(Date().timeIntervalSince1970 * 1000)
         let processor = SessionProcessor(
-            kettlebellMassKg: kettlebellMassKg,
-            bodyMassKg: bodyMassKg,
+            kettlebellMassKg: kettlebellMassKgDouble,
+            bodyMassKg: bodyMassKgDouble,
             startTimeEpochMs: startEpochMs
         )
         
@@ -320,6 +348,54 @@ struct MetricCard: View {
         .padding()
         .background(Color(.systemGray6))
         .cornerRadius(12)
+    }
+}
+
+struct WeightPickerSheet: View {
+    let title: String
+    @Binding var selectedValue: Int
+    let range: ClosedRange<Int>
+    let unit: String
+    @Binding var isPresented: Bool
+    
+    // Local state to avoid updating binding during scrolling
+    @State private var localValue: Int
+    
+    init(title: String, selectedValue: Binding<Int>, range: ClosedRange<Int>, unit: String, isPresented: Binding<Bool>) {
+        self.title = title
+        self._selectedValue = selectedValue
+        self.range = range
+        self.unit = unit
+        self._isPresented = isPresented
+        // Initialize local value from binding
+        self._localValue = State(initialValue: selectedValue.wrappedValue)
+    }
+    
+    var body: some View {
+        NavigationView {
+            VStack {
+                Picker(title, selection: $localValue) {
+                    ForEach(Array(range), id: \.self) { value in
+                        Text("\(value) \(unit)").tag(value)
+                    }
+                }
+                .pickerStyle(.wheel)
+                .frame(maxHeight: 200)
+                
+                Spacer()
+            }
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        // Only update binding when Done is tapped
+                        selectedValue = localValue
+                        isPresented = false
+                    }
+                }
+            }
+        }
     }
 }
 

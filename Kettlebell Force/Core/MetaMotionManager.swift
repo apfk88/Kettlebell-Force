@@ -209,6 +209,20 @@ final class MetaMotionManager: ObservableObject {
         cancellables.removeAll()
     }
     
+    var deviceName: String? {
+        guard let device = device else { return nil }
+        
+        // Try to get device identifier from UUID as fallback
+        if let uuid = getDeviceUUID(device) {
+            // Use last 8 characters of UUID as device identifier
+            let uuidString = uuid.uuidString
+            let shortId = String(uuidString.suffix(8))
+            return "MetaWear \(shortId)"
+        }
+        
+        return nil
+    }
+    
     func configureAccelerometer(odr: Float = 100.0, rangeG: Float = 16.0) -> Bool {
         guard device != nil else { return false }
         
