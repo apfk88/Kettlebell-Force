@@ -9,7 +9,8 @@ import Foundation
 
 struct UserProfile: Codable {
     var bodyMassKg: Double
+    var lastConnectedDeviceUUID: UUID?
     
-    static let `default` = UserProfile(bodyMassKg: 70.0)
+    static let `default` = UserProfile(bodyMassKg: 70.0, lastConnectedDeviceUUID: nil)
 }
 

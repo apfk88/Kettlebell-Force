@@ -11,121 +11,47 @@ import MetaWear
 struct HomeView: View {
     @ObservedObject var dataStore = DataStore.shared
     @StateObject private var metaMotionManager = MetaMotionManager()
-    @State private var bodyMassText: String = ""
     @State private var showingSessionView = false
+    @State private var selectedSession: SessionSummary?
+    
+    private var dateFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }
     
     var body: some View {
         NavigationView {
-            VStack(spacing: 24) {
-                // Body Mass Input
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Body Mass")
-                        .font(.headline)
-                    TextField("Enter body mass (kg)", text: $bodyMassText)
-                        .textFieldStyle(.roundedBorder)
-                        .keyboardType(.decimalPad)
-                        .onAppear {
-                            bodyMassText = String(format: "%.1f", dataStore.userProfile.bodyMassKg)
-                        }
-                        .onChange(of: bodyMassText) { oldValue, newValue in
-                            if let value = Double(newValue), value > 0 {
-                                dataStore.userProfile.bodyMassKg = value
-                                dataStore.saveUserProfile()
-                            }
-                        }
-                }
-                .padding(.horizontal)
-                
-                Divider()
-                
-                // Device Connection Section
-                VStack(spacing: 16) {
-                    if metaMotionManager.isConnected {
-                        VStack(spacing: 8) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.green)
-                                .font(.system(size: 48))
-                            Text("Connected")
-                                .font(.headline)
-                            if metaMotionManager.device != nil {
-                                Text("Connected Device")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        .padding()
-                        
-                        Button("Disconnect") {
-                            metaMotionManager.disconnect()
-                        }
-                        .buttonStyle(.bordered)
-                    } else {
-                        VStack(spacing: 16) {
-                            Button(action: {
-                                metaMotionManager.scanAndConnect()
-                            }) {
-                                HStack {
-                                    if metaMotionManager.isScanning {
-                                        ProgressView()
-                                            .progressViewStyle(CircularProgressViewStyle())
-                                    } else {
-                                        Image(systemName: "magnifyingglass")
-                                    }
-                                    Text(metaMotionManager.isScanning ? "Scanning..." : "Scan and Connect")
+            VStack(spacing: 0) {
+                if dataStore.sessions.isEmpty {
+                    Spacer()
+                    emptyStateView
+                    Spacer()
+                } else {
+                    List {
+                        ForEach(dataStore.sessions.prefix(10)) { session in
+                            SessionRow(session: session)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    selectedSession = session
                                 }
-                                .frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(metaMotionManager.isScanning)
-                            
-                            if !metaMotionManager.discoveredDevices.isEmpty {
-                                Text("Discovered Devices:")
-                                    .font(.headline)
-                                    .padding(.top)
-                                
-                                ForEach(0..<metaMotionManager.discoveredDevices.count, id: \.self) { index in
-                                    let device = metaMotionManager.discoveredDevices[index]
-                                    Button(action: {
-                                        metaMotionManager.connect(to: device)
-                                    }) {
-                                        HStack {
-                                            Image(systemName: "sensor.tag.radiowaves.forward")
-                                            Text("MetaWear Device")
-                                            Spacer()
-                                            Text("Device \(index + 1)")
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
-                                        }
-                                        .padding()
-                                        .background(Color(.systemGray6))
-                                        .cornerRadius(8)
-                                    }
-                                }
-                            }
-                            
-                            if let error = metaMotionManager.connectionError {
-                                Text(error)
-                                    .foregroundColor(.red)
-                                    .font(.caption)
-                            }
                         }
+                        .onDelete(perform: deleteSessions)
                     }
+                    .listStyle(.plain)
                 }
-                .padding(.horizontal)
                 
-                Spacer()
-                
-                // Start Session Button
+                // Start New Session Button
                 Button(action: {
                     showingSessionView = true
                 }) {
-                    Text("Start Session")
+                    Text("Start New Session")
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                         .padding()
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(!metaMotionManager.isConnected)
                 .padding(.horizontal)
                 .padding(.bottom)
             }
@@ -133,6 +59,31 @@ struct HomeView: View {
             .sheet(isPresented: $showingSessionView) {
                 SessionView(metaMotionManager: metaMotionManager)
             }
+            .sheet(item: $selectedSession) { session in
+                SessionDetailView(session: session)
+            }
+        }
+    }
+    
+    private var emptyStateView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "clock.arrow.circlepath")
+                .font(.system(size: 64))
+                .foregroundColor(.secondary)
+            Text("No Sessions Yet")
+                .font(.title2)
+                .fontWeight(.semibold)
+            Text("Start a session to see your training history here")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+        }
+    }
+    
+    private func deleteSessions(at offsets: IndexSet) {
+        for index in offsets {
+            dataStore.deleteSession(dataStore.sessions[index])
         }
     }
 }

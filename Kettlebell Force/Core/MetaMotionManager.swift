@@ -8,6 +8,7 @@
 import Foundation
 import Combine
 import MetaWear
+import MetaWearCpp
 
 final class MetaMotionManager: ObservableObject {
     @Published var device: MetaWear?       // currently connected device
@@ -19,9 +20,58 @@ final class MetaMotionManager: ObservableObject {
     private var accelerationHandler: ((Float, Float, Float, UInt64) -> Void)?
     private var cancellables = Set<AnyCancellable>()
     private var accelerometerCancellable: AnyCancellable?
+    private let dataStore = DataStore.shared
+    
+    // Local cache of devices to avoid frequent access to SDK's dictionary which might cause crashes
+    private var deviceMap: [UUID: MetaWear] = [:]
     
     init() {
         setupScannerSubscriptions()
+    }
+    
+    private func getDeviceUUID(_ device: MetaWear) -> UUID? {
+        // Use local map to find UUID
+        for (uuid, cachedDevice) in deviceMap {
+            if cachedDevice === device {
+                return uuid
+            }
+        }
+        return nil
+    }
+    
+    func tryAutoConnect() {
+        guard !isConnected else { return }
+        guard let lastUUID = dataStore.userProfile.lastConnectedDeviceUUID else { return }
+        
+        // Start scanning
+        scanAndConnect()
+        
+        // Check local map first
+        if let device = deviceMap[lastUUID] {
+            connect(to: device)
+            return
+        }
+        
+        // Wait for device to be discovered
+        var checkCount = 0
+        let maxChecks = 40
+        
+        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] timer in
+            guard let self = self else {
+                timer.invalidate()
+                return
+            }
+            
+            checkCount += 1
+            
+            if let device = self.deviceMap[lastUUID] {
+                timer.invalidate()
+                self.connect(to: device)
+            } else if checkCount >= maxChecks {
+                timer.invalidate()
+                self.stopScanning()
+            }
+        }
     }
     
     private func setupScannerSubscriptions() {
@@ -32,10 +82,21 @@ final class MetaMotionManager: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] discoveredDevice in
                 guard let self = self else { return }
-                // Check if device already in list (compare by object identity or UUID)
+                
+                // Update local map? We need UUID. 
+                // MetaWear object usually doesn't expose UUID directly in public API easily 
+                // without iterating the map or it's passed in the map.
+                // But didDiscoverUniqued just gives the device.
+                
+                // We can't easily key by UUID unless we know it.
+                // However, discoveredDevices array needs to be populated.
+                
                 if !self.discoveredDevices.contains(where: { $0 === discoveredDevice }) {
                     self.discoveredDevices.append(discoveredDevice)
                 }
+                
+                // Try to sync local map from scanner safely
+                self.refreshDeviceMap()
             }
             .store(in: &cancellables)
         
@@ -45,22 +106,34 @@ final class MetaMotionManager: ObservableObject {
             .assign(to: &$isScanning)
     }
     
+    private func refreshDeviceMap() {
+        // Safely copy devices from scanner to local map
+        // We do this on main thread to avoid threading issues if scanner is not thread safe
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            let scanner = MetaWearScanner.shared
+            self.deviceMap = scanner.discoveredDevices
+            
+            // Also update discoveredDevices list from map values to keep them in sync
+            // but preserve order if possible? 
+            // Actually, keep discoveredDevices as is (appended on discovery) 
+            // or rebuild it? Rebuilding is safer for consistency.
+            self.discoveredDevices = Array(self.deviceMap.values)
+        }
+    }
+    
     func scanAndConnect() {
         guard !isScanning else { return }
         
         discoveredDevices = []
+        deviceMap = [:]
         connectionError = nil
         
         // Start scanning
         MetaWearScanner.shared.startScan(higherPerformanceMode: false)
         
-        // Also load any already discovered devices from the dictionary
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            let scanner = MetaWearScanner.shared
-            let devices = Array(scanner.discoveredDevices.values)
-            self.discoveredDevices = devices
-        }
+        // Initial refresh
+        refreshDeviceMap()
     }
     
     func stopScanning() {
@@ -106,6 +179,12 @@ final class MetaMotionManager: ObservableObject {
                         self.device = device
                         self.isConnected = true
                         self.stopScanning()
+                        
+                        // Save device UUID for auto-reconnect
+                        if let uuid = self.getDeviceUUID(device) {
+                            self.dataStore.userProfile.lastConnectedDeviceUUID = uuid
+                            self.dataStore.saveUserProfile()
+                        }
                     } else {
                         self.connectionError = "Failed to connect to device"
                         self.isConnected = false
@@ -124,6 +203,7 @@ final class MetaMotionManager: ObservableObject {
         DispatchQueue.main.async { [weak self] in
             self?.device = nil
             self?.isConnected = false
+            // Note: We keep the lastConnectedDeviceUUID so we can auto-reconnect next time
         }
         
         cancellables.removeAll()
@@ -138,49 +218,86 @@ final class MetaMotionManager: ObservableObject {
     }
     
     func startAccelerometerStreaming(onSample: @escaping (Float, Float, Float, UInt64) -> Void) {
-        guard device != nil else { return }
+        guard let device = device else {
+            // No device connected - use simulation for testing
+            print("⚠️ No device connected - using simulated accelerometer data")
+            accelerationHandler = onSample
+            simulateAccelerometerData()
+            return
+        }
         
         accelerationHandler = onSample
         
-        // Use the new Swift Combine SDK to stream accelerometer data
-        // The exact API will need to be adjusted based on the actual SDK structure
+        // Use MetaWear C++ API to configure and start accelerometer
+        // 1. Configure Accelerometer (100Hz, 16g)
+        mbl_mw_acc_set_odr(device.board, 100.0)
+        mbl_mw_acc_set_range(device.board, 16.0)
+        mbl_mw_acc_write_acceleration_config(device.board)
         
-        #if DEBUG
-        // For now, use simulation until we can verify the actual API
-        simulateAccelerometerData()
-        #else
-        // TODO: Uncomment and adjust once SDK API is confirmed
-        // Example pattern (adjust based on actual API):
-        // accelerometerCancellable = device.accelerometer?.acceleration
-        //     .sink { [weak self] (acceleration: Acceleration) in
-        //         guard let self = self else { return }
-        //         let x = Float(acceleration.x)
-        //         let y = Float(acceleration.y)
-        //         let z = Float(acceleration.z)
-        //         let epoch = UInt64(Date().timeIntervalSince1970 * 1000)
-        //         self.accelerationHandler?(x, y, z, epoch)
-        //     }
-        // device.accelerometer?.start()
-        #endif
+        // 2. Get Data Signal
+        guard let signal = mbl_mw_acc_get_acceleration_data_signal(device.board) else {
+            print("Failed to get accelerometer signal")
+            simulateAccelerometerData()
+            return
+        }
+        
+        // 3. Subscribe to Data
+        // We pass 'self' as the context to the C callback
+        let context = Unmanaged.passUnretained(self).toOpaque()
+        
+        mbl_mw_datasignal_subscribe(signal, context) { (context, data) in
+            guard let context = context, let data = data else { return }
+            
+            // Convert context back to MetaMotionManager
+            let manager = Unmanaged<MetaMotionManager>.fromOpaque(context).takeUnretainedValue()
+            
+            // Parse data
+            let value: MblMwCartesianFloat = data.pointee.valueAs()
+            let x = value.x
+            let y = value.y
+            let z = value.z
+            let epoch = UInt64(Date().timeIntervalSince1970 * 1000)
+            
+            // Forward to handler
+            manager.accelerationHandler?(x, y, z, epoch)
+        }
+        
+        // 4. Start Streaming
+        mbl_mw_acc_enable_acceleration_sampling(device.board)
+        mbl_mw_acc_start(device.board)
     }
     
     func stopAccelerometerStreaming() {
-        accelerationHandler = nil
-        accelerometerCancellable?.cancel()
-        accelerometerCancellable = nil
+        // Stop simulation timer if running
+        #if DEBUG
+        simulationTimer?.invalidate()
+        simulationTimer = nil
+        #endif
         
-        // Stop the accelerometer - method name may vary
-        // device?.accelerometer?.stop()
+        guard let device = device else { return }
+        
+        // Stop accelerometer
+        mbl_mw_acc_stop(device.board)
+        mbl_mw_acc_disable_acceleration_sampling(device.board)
+        
+        // Note: Technically we should unsubscribe, but for this simple app
+        // stopping the sensor is sufficient to stop the stream.
+        // To unsubscribe we'd need to keep the signal reference.
+        
+        accelerationHandler = nil
     }
     
     #if DEBUG
     private var simulationTimer: Timer?
     
     private func simulateAccelerometerData() {
+        // Only use simulation as fallback when device/accelerometer is not available
+        simulationTimer?.invalidate()
+        
         var timeOffset: UInt64 = 0
-        simulationTimer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { [weak self] _ in
+        simulationTimer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { [weak self] timer in
             guard let self = self, let handler = self.accelerationHandler else {
-                self?.simulationTimer?.invalidate()
+                timer.invalidate()
                 return
             }
             

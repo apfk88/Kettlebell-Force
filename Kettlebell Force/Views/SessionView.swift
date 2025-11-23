@@ -12,11 +12,17 @@ struct SessionView: View {
     @ObservedObject var dataStore = DataStore.shared
     @Environment(\.dismiss) var dismiss
     
-    @State private var kettlebellMassText: String = "24.0"
+    @State private var kettlebellMassText: String = "24"
+    @State private var bodyMassText: String = ""
     @State private var selectedExerciseType: ExerciseType = .swing
     @State private var sessionProcessor: SessionProcessor?
     @State private var isSessionActive = false
     @State private var sessionStartTime: Date?
+    @State private var showingExitAlert = false
+    
+    init(metaMotionManager: MetaMotionManager) {
+        self.metaMotionManager = metaMotionManager
+    }
     
     var body: some View {
         NavigationView {
@@ -33,88 +39,156 @@ struct SessionView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        stopSession()
-                        dismiss()
+                    Button("Exit") {
+                        if isSessionActive {
+                            showingExitAlert = true
+                        } else {
+                            dismiss()
+                        }
                     }
                 }
+            }
+            .alert("Exit Without Saving?", isPresented: $showingExitAlert) {
+                Button("Cancel", role: .cancel) { }
+                Button("Exit", role: .destructive) {
+                    stopSession()
+                    dismiss()
+                }
+            } message: {
+                Text("Your current session will not be saved.")
             }
         }
     }
     
     private var setupView: some View {
-        VStack(spacing: 24) {
-            // Kettlebell Mass Input
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Kettlebell Mass")
-                    .font(.headline)
-                TextField("Enter kettlebell mass (kg)", text: $kettlebellMassText)
-                    .textFieldStyle(.roundedBorder)
-                    .keyboardType(.decimalPad)
-            }
-            .padding(.horizontal)
-            
-            // Exercise Type Picker
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Exercise Type")
-                    .font(.headline)
-                Picker("Exercise Type", selection: $selectedExerciseType) {
-                    ForEach(ExerciseType.allCases) { type in
-                        Text(type.displayName).tag(type)
+        ScrollView {
+            VStack(spacing: 24) {
+                // Device Row
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Device")
+                        .font(.headline)
+                        .padding(.horizontal)
+                    
+                    NavigationLink(destination: DeviceSelectionView(metaMotionManager: metaMotionManager)) {
+                        HStack {
+                            Image(systemName: metaMotionManager.isConnected ? "checkmark.circle.fill" : "circle")
+                                .foregroundColor(metaMotionManager.isConnected ? .green : .secondary)
+                            if let device = metaMotionManager.device, let deviceName = device.name, !deviceName.isEmpty {
+                                Text(deviceName)
+                                    .foregroundColor(.primary)
+                            } else {
+                                Text("MetaWear Device")
+                                    .foregroundColor(.primary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                        }
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(10)
                     }
+                    .padding(.horizontal)
                 }
-                .pickerStyle(.segmented)
+                
+                // Body Mass and Kettlebell Mass Inputs - Side by Side
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Weight (KG)")
+                        .font(.headline)
+                        .padding(.horizontal)
+                    
+                    HStack(spacing: 16) {
+                        // Body Mass Input
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Bodyweight")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            TextField("KG", text: $bodyMassText)
+                                .textFieldStyle(.roundedBorder)
+                                .keyboardType(.numberPad)
+                                .font(.title2)
+                                .multilineTextAlignment(.center)
+                                .padding(.vertical, 12)
+                                .frame(minHeight: 50)
+                                .contentShape(Rectangle())
+                                .onAppear {
+                                    let bodyMass = Int(dataStore.userProfile.bodyMassKg)
+                                    bodyMassText = bodyMass > 0 ? "\(bodyMass)" : ""
+                                }
+                                .onChange(of: bodyMassText) { oldValue, newValue in
+                                    if let value = Int(newValue), value > 0 {
+                                        dataStore.userProfile.bodyMassKg = Double(value)
+                                        dataStore.saveUserProfile()
+                                    }
+                                }
+                        }
+                        .frame(maxWidth: .infinity)
+                        
+                        // Kettlebell Mass Input
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Kettlebell")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            TextField("KG", text: $kettlebellMassText)
+                                .textFieldStyle(.roundedBorder)
+                                .keyboardType(.numberPad)
+                                .font(.title2)
+                                .multilineTextAlignment(.center)
+                                .padding(.vertical, 12)
+                                .frame(minHeight: 50)
+                                .contentShape(Rectangle())
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .padding(.horizontal)
+                }
+                
+                // Exercise Type Picker
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Exercise Type")
+                        .font(.headline)
+                    Picker("Exercise Type", selection: $selectedExerciseType) {
+                        ForEach(ExerciseType.allCases) { type in
+                            Text(type.displayName).tag(type)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                .padding(.horizontal)
+                
+                // Start Session Button
+                Button(action: {
+                    startSession()
+                }) {
+                    Text("Start Session")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(kettlebellMassKg <= 0 || bodyMassKg <= 0 || !metaMotionManager.isConnected)
+                .padding(.horizontal)
+                .padding(.bottom)
             }
-            .padding(.horizontal)
-            
-            Spacer()
-            
-            // Start Session Button
-            Button(action: {
-                startSession()
-            }) {
-                Text("Start Session")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding()
+        }
+        .onAppear {
+            // Try to auto-connect to previously connected device
+            if !metaMotionManager.isConnected {
+                metaMotionManager.tryAutoConnect()
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(kettlebellMassKg <= 0)
-            .padding(.horizontal)
-            .padding(.bottom)
         }
     }
     
     private var activeSessionView: some View {
         ScrollView {
             VStack(spacing: 24) {
-                // Current Metrics
-                VStack(spacing: 16) {
-                    MetricCard(
-                        title: "Current Force",
-                        value: String(format: "%.1f N", sessionProcessor?.currentForceN ?? 0),
-                        subtitle: String(format: "%.2f x BW", sessionProcessor?.currentForceNorm ?? 0)
-                    )
-                    
-                    MetricCard(
-                        title: "Peak Force",
-                        value: String(format: "%.1f N", sessionProcessor?.peakForceN ?? 0),
-                        subtitle: String(format: "%.2f x BW", sessionProcessor?.peakForceNorm ?? 0)
-                    )
-                    
-                    MetricCard(
-                        title: "Session Impulse",
-                        value: String(format: "%.1f N·s", sessionProcessor?.sessionImpulseNs ?? 0),
-                        subtitle: nil
-                    )
-                    
-                    MetricCard(
-                        title: "Reps",
-                        value: "\(sessionProcessor?.reps.count ?? 0)",
-                        subtitle: nil
-                    )
+                if let processor = sessionProcessor {
+                    ActiveSessionContent(processor: processor)
+                } else {
+                    Text("No session data")
+                        .foregroundColor(.secondary)
                 }
-                .padding(.horizontal)
                 
                 // Stop Session Button
                 Button(action: {
@@ -138,14 +212,25 @@ struct SessionView: View {
         Double(kettlebellMassText) ?? 0
     }
     
+    private var bodyMassKg: Double {
+        Double(bodyMassText) ?? dataStore.userProfile.bodyMassKg
+    }
+    
     private func startSession() {
         guard kettlebellMassKg > 0 else { return }
+        guard bodyMassKg > 0 else { return }
         guard metaMotionManager.isConnected else { return }
+        
+        // Save body mass if entered
+        if let bodyMass = Int(bodyMassText), bodyMass > 0 {
+            dataStore.userProfile.bodyMassKg = Double(bodyMass)
+            dataStore.saveUserProfile()
+        }
         
         let startEpochMs = UInt64(Date().timeIntervalSince1970 * 1000)
         let processor = SessionProcessor(
             kettlebellMassKg: kettlebellMassKg,
-            bodyMassKg: dataStore.userProfile.bodyMassKg,
+            bodyMassKg: bodyMassKg,
             startTimeEpochMs: startEpochMs
         )
         
@@ -173,6 +258,42 @@ struct SessionView: View {
         isSessionActive = false
         sessionProcessor = nil
         sessionStartTime = nil
+        
+        // Navigate back to home screen
+        dismiss()
+    }
+}
+
+struct ActiveSessionContent: View {
+    @ObservedObject var processor: SessionProcessor
+    
+    var body: some View {
+        VStack(spacing: 16) {
+            MetricCard(
+                title: "Current Force",
+                value: String(format: "%.1f N", processor.currentForceN),
+                subtitle: String(format: "%.2f x BW", processor.currentForceNorm)
+            )
+            
+            MetricCard(
+                title: "Peak Force",
+                value: String(format: "%.1f N", processor.peakForceN),
+                subtitle: String(format: "%.2f x BW", processor.peakForceNorm)
+            )
+            
+            MetricCard(
+                title: "Session Impulse",
+                value: String(format: "%.1f N·s", processor.sessionImpulseNs),
+                subtitle: nil
+            )
+            
+            MetricCard(
+                title: "Reps",
+                value: "\(processor.reps.count)",
+                subtitle: nil
+            )
+        }
+        .padding(.horizontal)
     }
 }
 
