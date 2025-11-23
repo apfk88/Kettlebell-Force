@@ -6,6 +6,13 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		4123F1442ED34E6E00E0DF2D /* MetaWear in Frameworks */ = {isa = PBXBuildFile; productRef = 4123F1432ED34E6E00E0DF2D /* MetaWear */; };
+		4123F1462ED34E6E00E0DF2D /* MetaWearCpp in Frameworks */ = {isa = PBXBuildFile; productRef = 4123F1452ED34E6E00E0DF2D /* MetaWearCpp */; };
+		4123F1482ED34E6E00E0DF2D /* MetaWearFirmware in Frameworks */ = {isa = PBXBuildFile; productRef = 4123F1472ED34E6E00E0DF2D /* MetaWearFirmware */; };
+		4123F14A2ED34E6E00E0DF2D /* MetaWearSync in Frameworks */ = {isa = PBXBuildFile; productRef = 4123F1492ED34E6E00E0DF2D /* MetaWearSync */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		4123F1062ED34BAE00E0DF2D /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -65,6 +72,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4123F1462ED34E6E00E0DF2D /* MetaWearCpp in Frameworks */,
+				4123F1442ED34E6E00E0DF2D /* MetaWear in Frameworks */,
+				4123F1482ED34E6E00E0DF2D /* MetaWearFirmware in Frameworks */,
+				4123F14A2ED34E6E00E0DF2D /* MetaWearSync in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -125,6 +136,10 @@
 			);
 			name = "Kettlebell Force";
 			packageProductDependencies = (
+				4123F1432ED34E6E00E0DF2D /* MetaWear */,
+				4123F1452ED34E6E00E0DF2D /* MetaWearCpp */,
+				4123F1472ED34E6E00E0DF2D /* MetaWearFirmware */,
+				4123F1492ED34E6E00E0DF2D /* MetaWearSync */,
 			);
 			productName = "Kettlebell Force";
 			productReference = 4123F0F12ED34BAE00E0DF2D /* Kettlebell Force.app */;
@@ -208,6 +223,9 @@
 			);
 			mainGroup = 4123F0E82ED34BAE00E0DF2D;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				4123F1422ED34E6E00E0DF2D /* XCRemoteSwiftPackageReference "MetaWear-Swift-Combine-SDK" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4123F0F22ED34BAE00E0DF2D /* Products */;
 			projectDirPath = "";
@@ -595,6 +613,40 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		4123F1422ED34E6E00E0DF2D /* XCRemoteSwiftPackageReference "MetaWear-Swift-Combine-SDK" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/mbientlab/MetaWear-Swift-Combine-SDK";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.5.3;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		4123F1432ED34E6E00E0DF2D /* MetaWear */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4123F1422ED34E6E00E0DF2D /* XCRemoteSwiftPackageReference "MetaWear-Swift-Combine-SDK" */;
+			productName = MetaWear;
+		};
+		4123F1452ED34E6E00E0DF2D /* MetaWearCpp */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4123F1422ED34E6E00E0DF2D /* XCRemoteSwiftPackageReference "MetaWear-Swift-Combine-SDK" */;
+			productName = MetaWearCpp;
+		};
+		4123F1472ED34E6E00E0DF2D /* MetaWearFirmware */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4123F1422ED34E6E00E0DF2D /* XCRemoteSwiftPackageReference "MetaWear-Swift-Combine-SDK" */;
+			productName = MetaWearFirmware;
+		};
+		4123F1492ED34E6E00E0DF2D /* MetaWearSync */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4123F1422ED34E6E00E0DF2D /* XCRemoteSwiftPackageReference "MetaWear-Swift-Combine-SDK" */;
+			productName = MetaWearSync;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 4123F0E92ED34BAE00E0DF2D /* Project object */;
 }
